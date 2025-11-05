@@ -54,15 +54,17 @@ def load_excel_sheet(file_path, sheet_name):
     """
     Membaca sheet dari file Excel.
     Menggunakan cache data Streamlit untuk performa.
+    Header dimulai dari baris pertama (baris ke-1).
     """
     try:
-        df = pd.read_excel(file_path, sheet_name=sheet_name, header=1)
+        df = pd.read_excel(file_path, sheet_name=sheet_name, header=0)  # ← ubah header=0
         df.columns = df.columns.str.strip()
         df = df.fillna('')
         return df
     except Exception as e:
         st.error(f"Gagal memuat sheet '{sheet_name}': {e}")
         return None
+
 
 # ========================================
 # FUNGSI 2: CALL GEMINI API (Sedikit Modifikasi)
