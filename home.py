@@ -113,8 +113,11 @@ st.markdown("""
 
 
 # --- Bagian Header ---
-st.markdown('<p class="main-header">Digital Talent Platform</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Platform AI-Powered untuk Pemetaan dan Validasi Talenta Digital Indonesia</p>', unsafe_allow_html=True)
+# Menggabungkan header dan sub-header dalam satu blok markdown
+st.markdown("""
+    <div class="main-header">Digital Talent Platform</div>
+    <div class="sub-header">Platform AI-Powered untuk Pemetaan dan Validasi Talenta Digital Indonesia</div>
+""", unsafe_allow_html=True)
 
 st.markdown("---")
 
