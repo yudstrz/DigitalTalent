@@ -43,7 +43,7 @@ st.markdown("""
     .sub-header {
         font-size: 1.6em;
         text-align: center;
-        color: #444; /* Lebih gelap untuk kontras */
+        color: #ffffff; /* Lebih gelap untuk kontras */
         margin-bottom: 2em;
         font-weight: 300;
     }
