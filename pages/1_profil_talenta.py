@@ -49,7 +49,7 @@ def load_excel_sheet(file_path, sheet_name):
             st.info(f"Sheet yang tersedia adalah: {', '.join(available_sheets)}")
             return None
 
-        df = pd.read_excel(file_path, sheet_name=sheet_name, header=1)
+        df = pd.read_excel(file_path, sheet_name=sheet_name, header=0)
         df.columns = df.columns.str.strip()
         df = df.fillna('')
 
