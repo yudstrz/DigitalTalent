@@ -29,6 +29,7 @@ except ImportError:
 def load_excel_sheet(file_path, sheet_name):
     """
     Membaca satu sheet dari file Excel dengan penanganan error yang lengkap.
+    Menyesuaikan jika header ada di baris pertama (seperti contoh PON_TIK_Master).
     """
     try:
         if not os.path.exists(file_path):
@@ -36,31 +37,29 @@ def load_excel_sheet(file_path, sheet_name):
             return None
 
         xls = pd.ExcelFile(file_path)
-        available_sheets = xls.sheet_names
-        
-        # Sembunyikan debug untuk production
-        # with st.expander("Debug: Informasi Sheet Excel"):
-        #     st.write(f"File: `{file_path}`")
-        #     st.write(f"Sheet yang dicari: `{sheet_name}`")
-        #     st.write(f"Sheet tersedia: {', '.join(available_sheets)}")
-
-        if sheet_name not in available_sheets:
+        if sheet_name not in xls.sheet_names:
             st.error(f"Sheet '{sheet_name}' tidak ditemukan!")
-            st.info(f"Sheet yang tersedia adalah: {', '.join(available_sheets)}")
+            st.info(f"Sheet yang tersedia adalah: {', '.join(xls.sheet_names)}")
             return None
 
+        # ✅ Header di baris pertama
         df = pd.read_excel(file_path, sheet_name=sheet_name, header=0)
-        df.columns = df.columns.str.strip()
+
+        # ✅ Bersihkan nama kolom
+        df.columns = df.columns.astype(str).str.replace('\xa0', '').str.strip()
         df = df.fillna('')
 
-        # st.success(f"Sheet '{sheet_name}' berhasil dimuat ({len(df)} baris).") # Matikan agar tidak spam
+        # Debug singkat opsional
+        # st.write("Kolom terbaca:", list(df.columns))
+
         return df
-    
+
     except Exception as e:
         st.error(f"Error saat memuat sheet '{sheet_name}': {str(e)}")
         with st.expander("Detail Error Traceback"):
             st.code(traceback.format_exc())
         return None
+
 
 
 # ========================================
