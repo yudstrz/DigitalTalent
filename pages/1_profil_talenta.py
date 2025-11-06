@@ -8,7 +8,7 @@ import pandas as pd
 import re
 import io
 
-st.title("🧑‍💼 Profil Talenta (CV & Pemetaan Semantik)")
+st.title("Profil Talenta (CV & Pemetaan Semantik)")
 
 # 1️⃣ Upload CV
 uploaded_file = st.file_uploader("Unggah file CV Anda (PDF atau TXT)", type=["pdf", "txt"])
