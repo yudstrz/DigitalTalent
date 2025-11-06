@@ -117,6 +117,16 @@ body, .stApp {
 }
 .apply-row { margin-top: 10px; display:flex; gap:8px; }
 
+/* ====== CHAT CONTAINER SCROLL FIX ====== */
+.chat-container {
+    max-height: 450px; /* <-- Atur tinggi maksimal chat box */
+    overflow-y: auto;  /* <-- Ini kuncinya! */
+    border: 1px solid #2e3244;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 15px; /* Beri jarak ke tombol di bawahnya */
+}
+
 /* ====== CHAT BUBBLE STYLE ====== */
 .message-wrapper {
     display: flex;
