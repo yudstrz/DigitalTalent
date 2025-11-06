@@ -216,6 +216,10 @@ if 'mapped_okupasi_id' not in st.session_state:
 if 'okupasi_info' not in st.session_state:
     st.session_state.okupasi_info = {}
 
+# 🧪 DEBUG MODE: Simulasi okupasi untuk testing
+if 'debug_mode' not in st.session_state:
+    st.session_state.debug_mode = False
+
 
 # ========================================
 # 🔧 Helpers
@@ -591,6 +595,25 @@ def update_user_okupasi_mapping(okupasi_id, okupasi_nama):
     return False
 
 
+def auto_load_okupasi_from_url():
+    """
+    Auto-load okupasi jika ada parameter di URL
+    Contoh: ?okupasi_id=DS001
+    """
+    try:
+        params = st.query_params
+        if 'okupasi_id' in params:
+            okupasi_id = params['okupasi_id']
+            if not st.session_state.get('okupasi_info'):
+                okupasi_info = get_okupasi_info(okupasi_id)
+                if okupasi_info:
+                    st.session_state.mapped_okupasi_id = okupasi_id
+                    st.session_state.okupasi_info = okupasi_info
+                    st.success(f"✅ Okupasi auto-loaded: {okupasi_info.get('Okupasi')}")
+    except Exception as e:
+        pass  # Silent fail untuk URL params
+
+
 # ========================================
 # Gemini API
 # ========================================
@@ -696,6 +719,51 @@ if st.session_state.trigger_ai_response:
 # ========================================
 st.title("💡 Career Assistant AI")
 st.caption("Powered by Reinforcement Learning & Collaborative Filtering")
+
+# 🧪 Debug Mode Toggle (di sidebar)
+with st.sidebar:
+    st.markdown("### ⚙️ Settings")
+    
+    debug_mode = st.checkbox("🧪 Debug Mode (Simulasi Okupasi)", 
+                             value=st.session_state.debug_mode)
+    st.session_state.debug_mode = debug_mode
+    
+    if debug_mode:
+        st.markdown("---")
+        st.markdown("#### 🎯 Simulasi Okupasi")
+        
+        # Load okupasi data untuk dropdown
+        df_okupasi = load_okupasi_data()
+        
+        if df_okupasi is not None and not df_okupasi.empty:
+            okupasi_options = df_okupasi['Okupasi'].tolist()
+            okupasi_selected = st.selectbox(
+                "Pilih Okupasi:",
+                ["-- Pilih Okupasi --"] + okupasi_options,
+                key="okupasi_selector"
+            )
+            
+            if okupasi_selected != "-- Pilih Okupasi --":
+                # Get okupasi info
+                okupasi_row = df_okupasi[df_okupasi['Okupasi'] == okupasi_selected].iloc[0]
+                
+                if st.button("✅ Set Okupasi", use_container_width=True):
+                    st.session_state.mapped_okupasi_id = okupasi_row['OkupasiID']
+                    st.session_state.mapped_okupasi_nama = okupasi_row['Okupasi']
+                    st.session_state.okupasi_info = okupasi_row.to_dict()
+                    st.success(f"✅ Okupasi di-set: {okupasi_selected}")
+                    st.rerun()
+        else:
+            st.error("❌ Gagal load data okupasi")
+        
+        # Clear okupasi button
+        if st.session_state.get('okupasi_info'):
+            if st.button("🗑️ Clear Okupasi", use_container_width=True):
+                st.session_state.mapped_okupasi_id = None
+                st.session_state.mapped_okupasi_nama = None
+                st.session_state.okupasi_info = {}
+                st.success("✅ Okupasi di-clear!")
+                st.rerun()
 
 # Tampilkan info okupasi jika sudah dipetakan
 if st.session_state.get('mapped_okupasi_id'):
