@@ -783,8 +783,7 @@ if st.session_state.get('mapped_okupasi_id'):
                 """, unsafe_allow_html=True)
             with col_ok2:
                 st.markdown(f"**Nama Okupasi:** {okupasi_info.get('Okupasi', 'N/A')}")
-                st.markdown(f"**Deskripsi:** {okupasi_info.get('Deskripsi', 'N/A')}")
-                st.markdown(f"**Keterampilan:** {okupasi_info.get('Keterampilan', 'N/A')}")
+                st.markdown(f"**Keterampilan:** {okupasi_info.get('Kuk_Keywords', 'N/A')}")
         else:
             st.info("ℹ️ Data okupasi belum tersedia. Lakukan pemetaan terlebih dahulu.")
 
