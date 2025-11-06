@@ -26,15 +26,45 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 # --------------------------------------
 # Konfigurasi
 # --------------------------------------
+import os
+
+# Path ke file Excel database
+EXCEL_PATH = os.path.join("data", "DTP_Database.xlsx")
+
+# Nama-nama sheet di Excel
+SHEET_TALENTA = "Talenta"
+SHEET_PENDIDIKAN = "Riwayat_Pendidikan"
+SHEET_PEKERJAAN = "Riwayat_Pekerjaan"
+SHEET_SKILL = "Keterampilan_Sertifikasi"
+SHEET_PON = "PON_TIK_Master"
+SHEET_LOWONGAN = "Lowongan_Industri"
+SHEET_HASIL = "Hasil_Pemetaan_Asesmen"
+
+# Impor dari file konfigurasi lokal (jika ada)
 try:
-    # Coba impor dari file config.py
-    from config import EXCEL_PATH, SHEET_LOWONGAN, GEMINI_API_KEY, GEMINI_BASE_URL, GEMINI_MODEL
-except Exception:
-    # Fallback jika config.py tidak ada
-    EXCEL_PATH = "data/DTP_database.xlsx"
-    SHEET_LOWONGAN = "Lowongan_Industri"
-    # Catatan: Ganti API key Anda di sini atau di file config.py
-    GEMINI_API_KEY = "YOUR_GEMINI_API_KEY" 
+    from config import (
+        EXCEL_PATH as CONFIG_EXCEL_PATH,
+        SHEET_PON as CONFIG_SHEET_PON,
+        SHEET_TALENTA as CONFIG_SHEET_TALENTA,
+        SHEET_LOWONGAN as CONFIG_SHEET_LOWONGAN,
+        GEMINI_API_KEY,
+        GEMINI_BASE_URL,
+        GEMINI_MODEL
+    )
+    # Gunakan nilai dari config jika berhasil diimpor
+    EXCEL_PATH = CONFIG_EXCEL_PATH
+    SHEET_PON = CONFIG_SHEET_PON
+    SHEET_TALENTA = CONFIG_SHEET_TALENTA
+    SHEET_LOWONGAN = CONFIG_SHEET_LOWONGAN
+except ImportError:
+    # Gunakan nilai default jika config tidak ada
+    st.warning("⚠️ File config.py tidak ditemukan. Menggunakan konfigurasi default.")
+    GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
+    GEMINI_BASE_URL = "https://api.generativeai.google/v1"
+    GEMINI_MODEL = "gemini-small"
+except Exception as e:
+    st.error(f"❌ Error saat mengimpor config: {e}")
+    GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
     GEMINI_BASE_URL = "https://api.generativeai.google/v1"
     GEMINI_MODEL = "gemini-small"
 
@@ -163,27 +193,28 @@ if 'trigger_ai_response' not in st.session_state:
 # ========================================
 if 'user_interactions' not in st.session_state:
     st.session_state.user_interactions = {
-        'viewed': [],     # Job IDs yang dilihat
-        'applied': [],    # Job IDs yang dilamar
-        'rejected': [],   # Job IDs yang ditolak
-        'skill_preferences': defaultdict(float),  # Skill preference scores
+        'viewed': [],
+        'applied': [],
+        'rejected': [],
+        'skill_preferences': defaultdict(float),
         'location_preferences': defaultdict(float),
         'company_preferences': defaultdict(float)
     }
 
 if 'rl_q_table' not in st.session_state:
-    # Q-Table untuk RL: {state: {action: q_value}}
     st.session_state.rl_q_table = defaultdict(lambda: defaultdict(float))
 
 if 'user_profile_vector' not in st.session_state:
     st.session_state.user_profile_vector = None
 
 if 'all_users_data' not in st.session_state:
-    # Simulasi data user lain untuk CF
-    # Di aplikasi nyata, ini akan diambil dari database
-    st.session_state.all_users_data = {
-        # 'user_001': {'viewed': ['J001', 'J002'], 'applied': ['J001'], ...}
-    }
+    st.session_state.all_users_data = {}
+
+# Okupasi state (untuk integrasi dengan halaman lain)
+if 'mapped_okupasi_id' not in st.session_state:
+    st.session_state.mapped_okupasi_id = None
+if 'okupasi_info' not in st.session_state:
+    st.session_state.okupasi_info = {}
 
 
 # ========================================
@@ -228,10 +259,10 @@ class RLRecommender:
     def get_reward(self, action):
         """Calculate reward based on user action"""
         rewards = {
-            'apply': 10,    # Highest reward
-            'view': 2,      # Moderate reward
-            'reject': -5,   # Negative reward
-            'ignore': -1    # Small penalty
+            'apply': 10,
+            'view': 2,
+            'reject': -5,
+            'ignore': -1
         }
         return rewards.get(action, 0)
     
@@ -246,10 +277,8 @@ class RLRecommender:
     def select_action(self, state, available_jobs, q_table):
         """Epsilon-greedy action selection"""
         if random.random() < self.epsilon:
-            # Exploration: random job
             return random.choice(available_jobs) if available_jobs else None
         else:
-            # Exploitation: best Q-value job
             job_scores = {job['LowonganID']: q_table[state][job['LowonganID']] 
                           for job in available_jobs}
             if not job_scores:
@@ -298,17 +327,14 @@ class CollaborativeFilter:
         if self.similarity_matrix is None:
             return []
         
-        # Find similar users
         user_similarities = self.similarity_matrix[current_user_idx]
-        similar_users = np.argsort(user_similarities)[::-1][1:6]  # Top 5 similar users
+        similar_users = np.argsort(user_similarities)[::-1][1:6]
         
-        # Aggregate their preferences
         job_scores = np.zeros(self.user_item_matrix.shape[1])
         for similar_user_idx in similar_users:
             similarity = user_similarities[similar_user_idx]
             job_scores += similarity * self.user_item_matrix[similar_user_idx]
         
-        # Get top K jobs
         top_job_indices = np.argsort(job_scores)[::-1][:top_k]
         return top_job_indices
 
@@ -316,59 +342,75 @@ class CollaborativeFilter:
 # ========================================
 # 📊 Enhanced Recommendation System
 # ========================================
-
-# --- INI ADALAH FUNGSI YANG DIPERBAIKI ---
 @st.cache_data(ttl=600)
 def load_excel_data(path, sheet_name):
-    """Fungsi terpisah untuk cache data Excel."""
+    """
+    Fungsi untuk load data Excel dengan cache.
+    Mendukung dua mode:
+    1. Jika sheet memiliki header (baris pertama adalah nama kolom)
+    2. Jika sheet tidak memiliki header (semua baris adalah data)
+    """
     if not os.path.exists(path):
         st.warning(f"⚠️ File Excel tidak ditemukan di: {path}")
         return None
         
     try:
-        # 1. Baca file Excel tanpa header (header=None)
-        #    Karena baris pertama adalah data, bukan judul.
-        df = pd.read_excel(path, sheet_name=sheet_name, header=None, engine='openpyxl')
+        # Coba baca dulu dengan header (mode normal)
+        df_with_header = pd.read_excel(path, sheet_name=sheet_name, engine='openpyxl')
         
-        # 2. Tentukan nama kolom yang diharapkan oleh script Anda
-        expected_cols = [
-            'LowonganID', 'Perusahaan', 'Posisi', 'Deskripsi_Pekerjaan', 
-            'Keterampilan_Dibutuhkan', 'Lokasi'
-        ]
+        # Definisi struktur kolom untuk setiap sheet
+        sheet_columns = {
+            SHEET_LOWONGAN: ['LowonganID', 'Perusahaan', 'Posisi', 'Deskripsi_Pekerjaan', 
+                            'Keterampilan_Dibutuhkan', 'Lokasi'],
+            SHEET_PON: ['OkupasiID', 'Okupasi', 'Deskripsi', 'Keterampilan'],
+            SHEET_TALENTA: ['TalentaID', 'Nama', 'Email', 'Telepon', 'Alamat'],
+            SHEET_PENDIDIKAN: ['PendidikanID', 'TalentaID', 'Jenjang', 'Institusi', 'Jurusan', 'Tahun'],
+            SHEET_PEKERJAAN: ['PekerjaanID', 'TalentaID', 'Perusahaan', 'Posisi', 'Tahun_Mulai', 'Tahun_Selesai'],
+            SHEET_SKILL: ['SkillID', 'TalentaID', 'Keterampilan', 'Tingkat', 'Sertifikasi'],
+            SHEET_HASIL: ['HasilID', 'TalentaID', 'OkupasiID', 'Skor', 'Tanggal']
+        }
         
-        # 3. Beri nama pada kolom yang sudah dibaca
-        #    Pastikan jumlah kolom di file Excel SAMA DENGAN jumlah expected_cols
-        if len(df.columns) == len(expected_cols):
-            df.columns = expected_cols
+        expected_cols = sheet_columns.get(sheet_name)
+        
+        if expected_cols is None:
+            st.warning(f"⚠️ Sheet '{sheet_name}' tidak dikenali. Menggunakan struktur default.")
+            return df_with_header
+        
+        # Cek apakah header sudah sesuai
+        if list(df_with_header.columns) == expected_cols:
+            # Header sudah benar, langsung return
+            return df_with_header
+        
+        # Jika header tidak sesuai, coba mode tanpa header
+        df_no_header = pd.read_excel(path, sheet_name=sheet_name, header=None, engine='openpyxl')
+        
+        if len(df_no_header.columns) == len(expected_cols):
+            df_no_header.columns = expected_cols
+            return df_no_header
         else:
-            # Jika jumlah kolom tidak cocok, berikan error
-            st.error(f"Struktur file Excel salah. File memiliki {len(df.columns)} kolom, tapi script mengharapkan {len(expected_cols)} kolom.")
-            st.info(f"Kolom yang diharapkan: {expected_cols}")
-            return None
+            # Coba gunakan data dengan header asli
+            st.warning(f"⚠️ Struktur kolom tidak sesuai untuk sheet '{sheet_name}'.")
+            st.info(f"Kolom yang diharapkan ({len(expected_cols)}): {expected_cols}")
+            st.info(f"Kolom yang ditemukan ({len(df_with_header.columns)}): {list(df_with_header.columns)}")
+            return df_with_header  # Return data asli untuk debugging
             
-        return df
-        
     except Exception as e:
-        st.error(f"Gagal membuka Excel: {e}")
+        st.error(f"❌ Gagal membuka Excel sheet '{sheet_name}': {e}")
         return None
+
 
 def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
     """
     Hybrid recommendation menggunakan:
     1. Content-based filtering (skill matching)
     2. Reinforcement Learning (user behavior)
-    3. Collaborative Filtering (similar users) - (Fitur ini akan aktif jika all_users_data diisi)
+    3. Collaborative Filtering (similar users)
     """
     path = EXCEL_PATH or "data/DTP_database.xlsx"
-    
-    # Panggil fungsi yang sudah diperbaiki
     df = load_excel_data(path, SHEET_LOWONGAN)
     
-    if df is None:
+    if df is None or df.empty:
         return []
-
-    # Validasi kolom tidak perlu lagi di sini, karena sudah ditangani 
-    # di dalam load_excel_data.
 
     # 1. Content-Based Filtering
     profil_skills = extract_skill_tokens(profil_teks)
@@ -380,11 +422,10 @@ def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
         location = normalize_text(str(row['Lokasi']))
         company = normalize_text(str(row['Perusahaan']))
         
-        # Skill matching score
         matched_skills = [s for s in profil_skills if any(s in r or r in s for r in req_skills)]
         content_score = len(matched_skills) / max(len(req_skills), 1) if req_skills else 0
         
-        # 2. RL Score from user preferences (Implicit Feedback)
+        # 2. RL Score from user preferences
         interactions = st.session_state.user_interactions
         rl_score = 0
         
@@ -394,11 +435,9 @@ def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
         rl_score += interactions['location_preferences'].get(location, 0)
         rl_score += interactions['company_preferences'].get(company, 0)
         
-        # Penalty for rejected jobs
         if job_id in interactions['rejected']:
             rl_score -= 5
         
-        # Bonus for previously viewed but not applied
         if job_id in interactions['viewed'] and job_id not in interactions['applied']:
             rl_score += 1
         
@@ -407,8 +446,7 @@ def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
         state = rl_agent.get_state(interactions)
         q_score = st.session_state.rl_q_table[state].get(job_id, 0)
         
-        # Hybrid score (weighted combination)
-        # Bobot: 40% Content, 30% RL-implicit, 30% Q-learning
+        # Hybrid score
         final_score = (0.4 * content_score) + (0.3 * rl_score) + (0.3 * q_score)
         
         candidates.append({
@@ -420,11 +458,9 @@ def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
             'matched_skills': matched_skills
         })
     
-    # Sort by final score
     candidates_sorted = sorted(candidates, key=lambda x: (x['final_score'], random.random()), 
                                reverse=True)
     
-    # Prepare results
     results = []
     for c in candidates_sorted[:top_k]:
         job_dict = c['row'].to_dict()
@@ -446,7 +482,6 @@ def record_interaction(job, action):
     interactions = st.session_state.user_interactions
     job_id = str(job['LowonganID'])
     
-    # Record action
     if action == 'view' and job_id not in interactions['viewed']:
         interactions['viewed'].append(job_id)
     elif action == 'apply' and job_id not in interactions['applied']:
@@ -456,7 +491,6 @@ def record_interaction(job, action):
     elif action == 'reject' and job_id not in interactions['rejected']:
         interactions['rejected'].append(job_id)
     
-    # Update preferences (Implicit feedback for RL score)
     skills = extract_skill_tokens(str(job['Keterampilan_Dibutuhkan']))
     location = normalize_text(str(job['Lokasi']))
     company = normalize_text(str(job['Perusahaan']))
@@ -469,13 +503,59 @@ def record_interaction(job, action):
     interactions['location_preferences'][location] += reward_multiplier
     interactions['company_preferences'][company] += reward_multiplier
     
-    # Update Q-Table (Explicit Q-Learning)
     rl_agent = RLRecommender()
     state = rl_agent.get_state(interactions)
     reward = rl_agent.get_reward(action)
-    next_state = rl_agent.get_state(interactions) # State diperbarui setelah interaksi
+    next_state = rl_agent.get_state(interactions)
     
     rl_agent.update_q_value(state, job_id, reward, next_state, st.session_state.rl_q_table)
+
+
+# ========================================
+# 🔍 Okupasi Data Management
+# ========================================
+def load_okupasi_data():
+    """Load data okupasi dari sheet PON"""
+    try:
+        df_pon = load_excel_data(EXCEL_PATH, SHEET_PON)
+        if df_pon is None or df_pon.empty:
+            st.warning("⚠️ Data okupasi tidak tersedia.")
+            return None
+        return df_pon
+    except Exception as e:
+        st.error(f"❌ Error mengambil data okupasi: {e}")
+        return None
+
+
+def get_okupasi_info(okupasi_id):
+    """Ambil informasi okupasi berdasarkan ID"""
+    try:
+        df_pon = load_okupasi_data()
+        if df_pon is None:
+            return None
+        
+        okupasi_data = df_pon[df_pon['OkupasiID'] == okupasi_id]
+        if okupasi_data.empty:
+            st.warning(f"⚠️ Okupasi dengan ID '{okupasi_id}' tidak ditemukan.")
+            return None
+        
+        return okupasi_data.iloc[0].to_dict()
+    except Exception as e:
+        st.error(f"❌ Error mengambil info okupasi: {e}")
+        return None
+
+
+def update_user_okupasi_mapping(okupasi_id, okupasi_nama):
+    """Update mapping okupasi user di session state"""
+    st.session_state.mapped_okupasi_id = okupasi_id
+    st.session_state.mapped_okupasi_nama = okupasi_nama
+    
+    # Load full okupasi info
+    okupasi_info = get_okupasi_info(okupasi_id)
+    if okupasi_info:
+        st.session_state.okupasi_info = okupasi_info
+        return True
+    return False
 
 
 # ========================================
@@ -499,7 +579,6 @@ def get_career_analysis(user_message: str, chat_history: list) -> str:
     context = "\n".join([f"{'User' if m['role']=='user' else 'AI'}: {m['content']}" 
                          for m in chat_history[-6:]])
     
-    # Include RL insights
     interactions = st.session_state.user_interactions
     top_skills = sorted(interactions['skill_preferences'].items(), 
                         key=lambda x: x[1], reverse=True)[:5]
@@ -561,7 +640,6 @@ if st.session_state.trigger_ai_response:
             "content": ai_reply,
             "timestamp": datetime.now().strftime("%H:%M")
         })
-        # Simpan profil teks terakhir dari user untuk rekomendasi
         st.session_state['profil_teks'] = last_msg['content']
         st.session_state.waiting_response = False
         st.session_state.trigger_ai_response = False
@@ -573,7 +651,33 @@ if st.session_state.trigger_ai_response:
 st.title("💡 Career Assistant AI")
 st.caption("Powered by Reinforcement Learning & Collaborative Filtering")
 
+# Tampilkan info okupasi jika sudah dipetakan
+if st.session_state.get('mapped_okupasi_id'):
+    with st.expander("🎯 Okupasi Anda", expanded=False):
+        okupasi_info = st.session_state.get('okupasi_info', {})
+        if okupasi_info:
+            col_ok1, col_ok2 = st.columns([1, 3])
+            with col_ok1:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            padding: 20px; border-radius: 10px; text-align: center; color: white;'>
+                    <div style='font-size: 2.5em;'>👔</div>
+                    <div style='font-size: 0.9em; margin-top: 5px;'>Okupasi ID</div>
+                    <div style='font-size: 1.3em; font-weight: bold;'>{okupasi_info.get('OkupasiID', 'N/A')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_ok2:
+                st.markdown(f"**Nama Okupasi:** {okupasi_info.get('Okupasi', 'N/A')}")
+                st.markdown(f"**Deskripsi:** {okupasi_info.get('Deskripsi', 'N/A')}")
+                st.markdown(f"**Keterampilan:** {okupasi_info.get('Keterampilan', 'N/A')}")
+        else:
+            st.info("ℹ️ Data okupasi belum tersedia. Lakukan pemetaan terlebih dahulu.")
+
+st.markdown("---")
+
 # Stats Dashboard
+col1, col2, col3, col4 = st.columns(4)
+interactions = st.session_state.user_interactions
 col1, col2, col3, col4 = st.columns(4)
 interactions = st.session_state.user_interactions
 
@@ -699,8 +803,6 @@ if show_recs:
             
             for job in jobs:
                 job_id = str(job['LowonganID'])
-                
-                # Create unique key for each job card
                 card_key = f"job_{job_id}"
                 
                 st.markdown(f"""
@@ -763,8 +865,9 @@ with st.expander("📈 Advanced Analytics & Model Performance"):
         top_10_skills = sorted(interactions['skill_preferences'].items(), 
                                key=lambda x: x[1], reverse=True)[:10]
         
-        skills_df = pd.DataFrame(top_10_skills, columns=['Skill', 'Score'])
-        st.bar_chart(skills_df.set_index('Skill'))
+        if top_10_skills:
+            skills_df = pd.DataFrame(top_10_skills, columns=['Skill', 'Score'])
+            st.bar_chart(skills_df.set_index('Skill'))
     
     # Location Preferences
     if interactions['location_preferences']:
@@ -795,6 +898,10 @@ st.markdown("---")
 if st.button("💾 Export My Learning Profile", use_container_width=True):
     profile_data = {
         'timestamp': datetime.now().isoformat(),
+        'okupasi': {
+            'okupasi_id': st.session_state.get('mapped_okupasi_id'),
+            'okupasi_nama': st.session_state.get('mapped_okupasi_nama')
+        },
         'interactions': {
             'viewed_count': len(interactions['viewed']),
             'applied_count': len(interactions['applied']),
