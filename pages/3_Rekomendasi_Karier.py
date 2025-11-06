@@ -929,10 +929,18 @@ if st.session_state.show_recommendations:
     if not profil_teks:
         st.warning("Silakan masukkan profil Anda di chat terlebih dahulu (atau gunakan Quick Action 'Analisis') untuk mendapatkan rekomendasi.")
     else:
-        # --- (DIRAPIKAN) ---
         # Siapkan variabel info box agar f-string lebih bersih
         chat_skills_count = len(extract_skill_tokens(profil_teks))
-        behavior_interactions = len(st.session_state.user_interactions['viewed'])
+        # Ambil data interaksi
+        interactions = st.session_state.user_interactions
+        
+        # Hitung total SEMUA interaksi
+        total_viewed = len(interactions['viewed'])
+        total_applied = len(interactions['applied'])
+        total_rejected = len(interactions['rejected'])
+        
+        # Gunakan jumlah total, bukan hanya 'viewed'
+        behavior_interactions = total_viewed + total_applied + total_rejected 
 
         if st.session_state.get('okupasi_info'):
             okupasi_nama = st.session_state.okupasi_info.get('Okupasi', 'N/A')
