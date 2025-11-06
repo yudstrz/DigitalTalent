@@ -56,6 +56,9 @@ Q_WEIGHT = 0.3  # Bobot Q-learning
 # APPLICATION SETTINGS
 # ========================================
 
+# Jumlah soal default untuk asesmen
+JUMLAH_SOAL = 5  # <-- TAMBAHKAN INI
+
 # Cache TTL (Time To Live) dalam detik
 CACHE_TTL = 600  # 10 menit
 
