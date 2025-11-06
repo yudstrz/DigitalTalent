@@ -379,7 +379,7 @@ for key in default_keys:
 # ========================================
 # UI: JUDUL DAN UPLOADER
 # ========================================
-st.title("1. Profil Talenta (Versi Semantik)")
+st.title("Profil Talenta")
 st.markdown("Unggah CV Anda untuk dianalisis dan dipetakan ke standar **PON TIK**.")
 
 uploaded_file = st.file_uploader(
