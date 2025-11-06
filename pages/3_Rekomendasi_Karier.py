@@ -366,7 +366,7 @@ def load_excel_data(path, sheet_name):
         sheet_columns = {
             SHEET_LOWONGAN: ['LowonganID', 'Perusahaan', 'Posisi', 'Deskripsi_Pekerjaan', 
                             'Keterampilan_Dibutuhkan', 'Lokasi'],
-            SHEET_PON: ['OkupasiID', 'Okupasi', 'Deskripsi', 'Keterampilan'],
+            SHEET_PON: ['OkupasiID', 'Area_Fungsi', 'Okupasi', 'Unit_Kompetensi', 'Kuk_Keywords'],
             SHEET_TALENTA: ['TalentaID', 'Nama', 'Email', 'Telepon', 'Alamat'],
             SHEET_PENDIDIKAN: ['PendidikanID', 'TalentaID', 'Jenjang', 'Institusi', 'Jurusan', 'Tahun'],
             SHEET_PEKERJAAN: ['PekerjaanID', 'TalentaID', 'Perusahaan', 'Posisi', 'Tahun_Mulai', 'Tahun_Selesai'],
@@ -424,7 +424,7 @@ def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
     # 🎯 ENRICHMENT: Tambahkan skill dari okupasi jika ada
     if st.session_state.get('okupasi_info'):
         okupasi_skills = extract_skill_tokens(
-            str(st.session_state.okupasi_info.get('Keterampilan', ''))
+            str(st.session_state.okupasi_info.get('Kuk_Keywords', ''))
         )
         # Gabungkan skill (unique)
         profil_skills = list(set(profil_skills + okupasi_skills))
