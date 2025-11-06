@@ -266,7 +266,7 @@ def calculate_final_level(skor: int) -> str:
 # --- UI STREAMLIT DIMULAI ---
 # ========================================
 
-st.title("2. Asesmen Kompetensi Adaptif")
+st.title("Asesmen Kompetensi Adaptif")
 
 # ========================================
 # VALIDASI USER
