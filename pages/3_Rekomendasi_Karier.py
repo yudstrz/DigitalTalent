@@ -219,7 +219,9 @@ if 'okupasi_info' not in st.session_state:
 # 🧪 DEBUG MODE: Simulasi okupasi untuk testing
 if 'debug_mode' not in st.session_state:
     st.session_state.debug_mode = False
-
+    
+if 'show_recommendations' not in st.session_state:
+    st.session_state.show_recommendations = False
 
 # ========================================
 # 🔧 Helpers
@@ -731,7 +733,6 @@ with st.sidebar:
     if debug_mode:
         st.markdown("---")
         st.markdown("#### 🎯 Simulasi Okupasi")
-        
         # Load okupasi data untuk dropdown
         df_okupasi = load_okupasi_data()
         
@@ -886,35 +887,56 @@ if send and user_msg.strip():
 # ========================================
 # Section: Rekomendasi Lowongan dengan RL & CF
 # ========================================
+# ========================================
+# Section: Rekomendasi Lowongan dengan RL & CF
+# ========================================
 st.markdown("---")
 st.markdown("### 🎯 Rekomendasi Lowongan Berbasis AI")
 
 col_btn1, col_btn2 = st.columns(2)
+
+# PERBAIKAN: Blok ini harus di-indentasi agar masuk ke 'col_btn1'
 with col_btn1:
-    show_recs = st.button("📊 Tampilkan Rekomendasi (Hybrid AI)", use_container_width=True)
+    if st.button("📊 Tampilkan Rekomendasi (Hybrid AI)", use_container_width=True):
+        st.session_state.show_recommendations = True
+
 with col_btn2:
     if st.button("🧠 Lihat Model Insights", use_container_width=True):
         st.markdown("#### 🔍 RL Model Insights")
         st.write("**Top 10 Skill Preferences:**")
-        top_skills = sorted(interactions['skill_preferences'].items(), 
+        interactions = st.session_state.user_interactions # Definisikan 'interactions' di sini
+        top_skills = sorted(interactions['skill_preferences'].items(),
                             key=lambda x: x[1], reverse=True)[:10]
         for skill, score in top_skills:
             st.write(f"- {skill}: {score:.2f}")
-        
+
         st.write("\n**Q-Table Size:**", len(st.session_state.rl_q_table))
 
-if show_recs:
+# 3. Ganti 'if show_recs:' dengan 'if st.session_state.show_recommendations:'
+if st.session_state.show_recommendations:
     profil_teks = st.session_state.get('profil_teks', '')
     if not profil_teks:
         st.warning("Silakan masukkan profil Anda di chat terlebih dahulu (atau gunakan Quick Action 'Analisis') untuk mendapatkan rekomendasi.")
     else:
+        # --- (DIRAPIKAN) ---
+        # Siapkan variabel info box agar f-string lebih bersih
+        chat_skills_count = len(extract_skill_tokens(profil_teks))
+        behavior_interactions = len(st.session_state.user_interactions['viewed'])
+
+        if st.session_state.get('okupasi_info'):
+            okupasi_nama = st.session_state.okupasi_info.get('Okupasi', 'N/A')
+            okupasi_str = f"✅ **Okupasi:** {okupasi_nama}"
+        else:
+            okupasi_str = "⚠️ **Okupasi:** Belum dipetakan"
+        # --- (AKHIR DIRAPIKAN) ---
+        
         # 🎯 Info Box: Sumber Rekomendasi
         st.info(f"""
         **🔍 Rekomendasi berdasarkan:**
         
-        ✅ **Chat Profile:** {len(extract_skill_tokens(profil_teks))} skills detected
-        {'✅ **Okupasi:** ' + st.session_state.okupasi_info.get('Okupasi', 'N/A') if st.session_state.get('okupasi_info') else '⚠️ **Okupasi:** Belum dipetakan'}
-        ✅ **Behavior Learning:** {len(st.session_state.user_interactions['viewed'])} interactions
+        ✅ **Chat Profile:** {chat_skills_count} skills detected
+        {okupasi_str}
+        ✅ **Behavior Learning:** {behavior_interactions} interactions
         """)
         
         jobs = get_hybrid_recommendations(profil_teks, top_k=8)
