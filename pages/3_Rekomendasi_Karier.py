@@ -405,6 +405,7 @@ def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
     1. Content-based filtering (skill matching)
     2. Reinforcement Learning (user behavior)
     3. Collaborative Filtering (similar users)
+    4. Okupasi-based enrichment
     """
     path = EXCEL_PATH or "data/DTP_database.xlsx"
     df = load_excel_data(path, SHEET_LOWONGAN)
@@ -413,7 +414,21 @@ def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
         return []
 
     # 1. Content-Based Filtering
+    # Gabungkan profil teks + skill dari okupasi
     profil_skills = extract_skill_tokens(profil_teks)
+    
+    # 🎯 ENRICHMENT: Tambahkan skill dari okupasi jika ada
+    if st.session_state.get('okupasi_info'):
+        okupasi_skills = extract_skill_tokens(
+            str(st.session_state.okupasi_info.get('Keterampilan', ''))
+        )
+        # Gabungkan skill (unique)
+        profil_skills = list(set(profil_skills + okupasi_skills))
+        
+        # Bonus: tambahkan nama okupasi sebagai keyword
+        okupasi_nama = st.session_state.okupasi_info.get('Okupasi', '')
+        if okupasi_nama:
+            profil_skills.extend(extract_skill_tokens(okupasi_nama))
     candidates = []
     
     for _, row in df.iterrows():
@@ -424,6 +439,24 @@ def get_hybrid_recommendations(profil_teks: str, top_k: int = 8):
         
         matched_skills = [s for s in profil_skills if any(s in r or r in s for r in req_skills)]
         content_score = len(matched_skills) / max(len(req_skills), 1) if req_skills else 0
+        
+        # 🎯 BONUS: Jika posisi cocok dengan okupasi, tambah score
+        okupasi_bonus = 0
+        if st.session_state.get('okupasi_info'):
+            okupasi_nama = normalize_text(st.session_state.okupasi_info.get('Okupasi', ''))
+            posisi = normalize_text(str(row['Posisi']))
+            
+            # Check kecocokan nama okupasi dengan posisi lowongan
+            if okupasi_nama in posisi or posisi in okupasi_nama:
+                okupasi_bonus = 0.2  # Bonus 20% untuk posisi yang match
+            else:
+                # Check partial match (misal: "Data Scientist" vs "Senior Data Analyst")
+                okupasi_tokens = set(okupasi_nama.split())
+                posisi_tokens = set(posisi.split())
+                if len(okupasi_tokens & posisi_tokens) >= 1:
+                    okupasi_bonus = 0.1  # Bonus 10% untuk partial match
+        
+        content_score = min(1.0, content_score + okupasi_bonus)  # Max 1.0
         
         # 2. RL Score from user preferences
         interactions = st.session_state.user_interactions
@@ -583,11 +616,23 @@ def get_career_analysis(user_message: str, chat_history: list) -> str:
     top_skills = sorted(interactions['skill_preferences'].items(), 
                         key=lambda x: x[1], reverse=True)[:5]
     
+    # 🎯 Tambahkan info okupasi ke context
+    okupasi_context = ""
+    if st.session_state.get('okupasi_info'):
+        okupasi = st.session_state.okupasi_info
+        okupasi_context = f"""
+=== Okupasi User ===
+Okupasi: {okupasi.get('Okupasi', 'N/A')}
+Okupasi ID: {okupasi.get('OkupasiID', 'N/A')}
+Keterampilan Okupasi: {okupasi.get('Keterampilan', 'N/A')}
+"""
+    
     prompt = f"""Anda adalah Career Coach AI bidang Teknologi Informasi dan Komunikasi.
 === Context ===
 {context}
 === Pesan Terbaru ===
 {user_message}
+{okupasi_context}
 === User Insights (dari ML) ===
 Top Skills Interest: {', '.join([s[0] for s in top_skills])}
 Total Interactions: {len(interactions['viewed'])} viewed, {len(interactions['applied'])} applied
@@ -596,7 +641,8 @@ Total Interactions: {len(interactions['viewed'])} viewed, {len(interactions['app
 2. Gunakan emoji secukupnya.
 3. Berikan saran karier & pelatihan relevan.
 4. Pertimbangkan pola preferensi user dari ML insights.
-5. Maksimal 5 kalimat.
+5. Jika user punya okupasi, berikan saran yang aligned dengan okupasi tersebut.
+6. Maksimal 5 kalimat.
 Jawaban:"""
     return call_gemini_api(prompt)
 
@@ -794,6 +840,15 @@ if show_recs:
     if not profil_teks:
         st.warning("Silakan masukkan profil Anda di chat terlebih dahulu (atau gunakan Quick Action 'Analisis') untuk mendapatkan rekomendasi.")
     else:
+        # 🎯 Info Box: Sumber Rekomendasi
+        st.info(f"""
+        **🔍 Rekomendasi berdasarkan:**
+        
+        ✅ **Chat Profile:** {len(extract_skill_tokens(profil_teks))} skills detected
+        {'✅ **Okupasi:** ' + st.session_state.okupasi_info.get('Okupasi', 'N/A') if st.session_state.get('okupasi_info') else '⚠️ **Okupasi:** Belum dipetakan'}
+        ✅ **Behavior Learning:** {len(st.session_state.user_interactions['viewed'])} interactions
+        """)
+        
         jobs = get_hybrid_recommendations(profil_teks, top_k=8)
 
         if not jobs:
@@ -801,15 +856,41 @@ if show_recs:
         else:
             st.success(f"🎉 Ditemukan {len(jobs)} rekomendasi dengan skor AI tertinggi!")
             
+            # Show breakdown skor
+            with st.expander("📊 Penjelasan Scoring System"):
+                st.markdown("""
+                **Hybrid Score = 40% Content + 30% RL + 30% Q-Learning**
+                
+                - **Content Score**: Kecocokan skill + okupasi
+                - **RL Score**: Preferensi dari interaksi (view/apply/reject)
+                - **Q-Score**: Optimal action dari machine learning
+                
+                💡 *Semakin banyak interaksi, semakin akurat rekomendasinya!*
+                """)
+            
             for job in jobs:
                 job_id = str(job['LowonganID'])
                 card_key = f"job_{job_id}"
                 
+                # 🎯 Highlight matched skills
+                matched_skills_str = ", ".join(job.get('_matched_skills', [])) if job.get('_matched_skills') else "N/A"
+                
+                # 🎯 Check okupasi match
+                okupasi_match_icon = ""
+                if st.session_state.get('okupasi_info'):
+                    okupasi_nama = normalize_text(st.session_state.okupasi_info.get('Okupasi', ''))
+                    posisi = normalize_text(str(job['Posisi']))
+                    if okupasi_nama in posisi or posisi in okupasi_nama:
+                        okupasi_match_icon = " 🎯"
+                
                 st.markdown(f"""
                 <div class='job-card'>
-                    <h4>💼 {job['Posisi']} — {job['Perusahaan']}</h4>
+                    <h4>💼 {job['Posisi']}{okupasi_match_icon} — {job['Perusahaan']}</h4>
                     <div class='job-meta'>📍 {job['Lokasi']}</div>
-                    <div class='job-skills'>🧩 {job['Keterampilan_Dibutuhkan']}</div>
+                    <div class='job-skills'>🧩 Required: {job['Keterampilan_Dibutuhkan']}</div>
+                    <div class='job-skills' style='background: rgba(76, 175, 80, 0.2); margin-top: 5px;'>
+                        ✅ You Have: {matched_skills_str}
+                    </div>
                     <div class='job-desc'>📝 {job['Deskripsi_Pekerjaan']}</div>
                     <div class='job-score'>
                         🎯 AI Score: {job['_final_score']} 
